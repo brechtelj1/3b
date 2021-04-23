@@ -20,17 +20,19 @@ int debugging3 = 1;
 #else
 int debugging3 = 0;
 #endif
+
 // just holds frameNum and the next node
 typedef struct FreeFrames{
     int frameNum;
-    FreeFrames *next;
+    struct FreeFrames *next;
 } FreeFrames;
+
 // holds the frame number, page number in the frame and the pid that holds the frame
 typedef struct UsedFrames{
     int frameNum;
     int pageNum;
     int pid;
-    UsedFrames *next;
+    struct UsedFrames *next;
 } UsedFrames;
 
 // dummy head nodes for both structs
@@ -79,19 +81,22 @@ P3FrameInit(int pages, int frames)
 
     // initialize the frame data structures, e.g. the pool of free frames
     // initialize head of the free frames
-    FreeFramesHead = (FreeFrames *) malloc(sizeof(FreeFrames))
+    FreeFramesHead = (FreeFrames *) malloc(sizeof(FreeFrames));
     // set frame num to -1 for head node
     FreeFramesHead->frameNum = -1;
     FreeFramesHead->next = NULL;
     cur = FreeFramesHead;
     // create frames number of frames and insert them into the list Ascending order (1,2,3,..)
     for(i = 0; i < frames; i++){
+        printf("i = %d\n",i);
         cur->next = (FreeFrames *) malloc(sizeof(FreeFrames));
         cur->next->frameNum = i;
         cur = cur->next;
+        cur->next = NULL;
     }
+
     //initialize head of the used frames
-    UsedFramesHead = (UsedFrames *) malloc(sizeof(UsedFrames))
+    UsedFramesHead = (UsedFrames *) malloc(sizeof(UsedFrames));
     UsedFramesHead->frameNum = -1;
     UsedFramesHead->pageNum = -1;
     UsedFramesHead->next = NULL;
@@ -148,7 +153,6 @@ P3FrameFreeAll(int pid)
             new->frameNum = cur->frameNum;
             // free used frame memory
             temp = cur;
-            Free(temp);
             // sets current to the next node
             cur = prev->next;
             P3_vmStats.freeFrames++;
@@ -197,44 +201,54 @@ P3PageFaultResolve(int pid, int page, int *frame)
     return P1_SUCCESS
     *******************/
     int rc;
+    FreeFrames *curr;
     FreeFrames *freeTemp;
     UsedFrames *usedTemp;
-    void *vmRegion, pmAddr;
-    int pageSize, numPage, numFrames, mode;
+    void *vmRegion;
+    void *pmAddr;
+    int pageSize, numFrames, mode;
+    curr = FreeFramesHead;
+    while(curr != NULL){
+        printf("curr = %d\n",curr->frameNum);
+        curr = curr->next;
+    }
+
     if(FreeFramesHead->next != NULL){
          rc = P1_Lock(lockId);
-         assert(rc == P1_SUCCESS);
+        assert(rc == P1_SUCCESS);
         // sets return to frame num
         freeTemp = FreeFramesHead->next;
         *frame = freeTemp->frameNum;
+                        printf("frame = %d\n",*frame);
+        //printf("frame = %d\n",*frame);
         FreeFramesHead->next = freeTemp->next;
         // free the memory of the free Node to be assigned to used
-        Free(freeTemp);
         // reduce free frames
         P3_vmStats.freeFrames--;
         // allocate space for used frame;
-        tempUsed = (UsedFrames *) malloc(sizeof(UsedFrames));
+        usedTemp = (UsedFrames *) malloc(sizeof(UsedFrames));
         // add tempUsed to used frames (head of list)
-        tempUsed->next = UsedFramesHead->next;
-        tempUsed->pageNum = page;
-        tempUsed->frameNum = *frame;
-        tempUsed->pid = pid;
-        UsedFramesHead->next = tempUsed;
+        usedTemp->next = UsedFramesHead->next;
+        usedTemp->pageNum = page;
+        usedTemp->frameNum = *frame;
+        usedTemp->pid = pid;
+        UsedFramesHead->next = usedTemp;
         rc = P1_Unlock(lockId);
         assert(rc == P1_SUCCESS);
     }
     else{
+        printf("swapoutFrame = %d\n",*frame);
         rc = P3SwapOut(frame);
         if(rc == P3_OUT_OF_SWAP){
             return rc;
         }
     }
-    rc = P3SwapIn(pid, page, frame);
+    rc = P3SwapIn(pid, page, *frame);
     if(rc == P3_PAGE_NOT_FOUND){
         rc = USLOSS_MmuGetConfig(&vmRegion, &pmAddr, &pageSize, &numPages, &numFrames, &mode);
         assert(rc == USLOSS_MMU_OK);
         // sets contents of frame to 0
-        memset(pmAddr[frame], 0, pageSize);
+        memset(pmAddr + (pageSize * (*frame)), 0, pageSize);
     }
     return P1_SUCCESS;
 }
