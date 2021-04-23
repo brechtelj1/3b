@@ -20,11 +20,13 @@ int debugging3 = 1;
 #else
 int debugging3 = 0;
 #endif
+
 // just holds frameNum and the next node
 typedef struct FreeFrames{
     int frameNum;
     struct FreeFrames *next;
 } FreeFrames;
+
 // holds the frame number, page number in the frame and the pid that holds the frame
 typedef struct UsedFrames{
     int frameNum;
@@ -86,9 +88,11 @@ P3FrameInit(int pages, int frames)
     cur = FreeFramesHead;
     // create frames number of frames and insert them into the list Ascending order (1,2,3,..)
     for(i = 0; i < frames; i++){
+        printf("i = %d\n",i);
         cur->next = (FreeFrames *) malloc(sizeof(FreeFrames));
         cur->next->frameNum = i;
         cur = cur->next;
+        cur->next = NULL;
     }
 
     //initialize head of the used frames
@@ -149,7 +153,6 @@ P3FrameFreeAll(int pid)
             new->frameNum = cur->frameNum;
             // free used frame memory
             temp = cur;
-            free(temp);
             // sets current to the next node
             cur = prev->next;
             P3_vmStats.freeFrames++;
@@ -198,21 +201,28 @@ P3PageFaultResolve(int pid, int page, int *frame)
     return P1_SUCCESS
     *******************/
     int rc;
+    FreeFrames *curr;
     FreeFrames *freeTemp;
     UsedFrames *usedTemp;
     void *vmRegion;
     void *pmAddr;
     int pageSize, numFrames, mode;
+    curr = FreeFramesHead;
+    while(curr != NULL){
+        printf("curr = %d\n",curr->frameNum);
+        curr = curr->next;
+    }
+
     if(FreeFramesHead->next != NULL){
          rc = P1_Lock(lockId);
-         assert(rc == P1_SUCCESS);
+        assert(rc == P1_SUCCESS);
         // sets return to frame num
         freeTemp = FreeFramesHead->next;
         *frame = freeTemp->frameNum;
-        printf("frame = %d\n",*frame);
+                        printf("frame = %d\n",*frame);
+        //printf("frame = %d\n",*frame);
         FreeFramesHead->next = freeTemp->next;
         // free the memory of the free Node to be assigned to used
-        free(freeTemp);
         // reduce free frames
         P3_vmStats.freeFrames--;
         // allocate space for used frame;
@@ -227,6 +237,7 @@ P3PageFaultResolve(int pid, int page, int *frame)
         assert(rc == P1_SUCCESS);
     }
     else{
+        printf("swapoutFrame = %d\n",*frame);
         rc = P3SwapOut(frame);
         if(rc == P3_OUT_OF_SWAP){
             return rc;
@@ -237,7 +248,6 @@ P3PageFaultResolve(int pid, int page, int *frame)
         rc = USLOSS_MmuGetConfig(&vmRegion, &pmAddr, &pageSize, &numPages, &numFrames, &mode);
         assert(rc == USLOSS_MMU_OK);
         // sets contents of frame to 0
-        printf("memset\n");
         memset(pmAddr + (pageSize * (*frame)), 0, pageSize);
     }
     return P1_SUCCESS;
